@@ -1,1 +1,51 @@
+name: Temporary VPN Server
+
+on:
+  workflow_dispatch:
+
+jobs:
+  vpn:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up WireGuard VPN
+        run: |
+          sudo apt update
+          sudo apt install -y wireguard
+          
+          # Настройка сервера WireGuard
+          echo "[Interface]
+          Address = 10.0.0.1/24
+          ListenPort = 51820
+          PrivateKey = $(wg genkey)
+          " | sudo tee /etc/wireguard/wg0.conf
+          
+          # Генерация ключей для клиента
+          CLIENT_PRIVATE_KEY=$(wg genkey)
+          CLIENT_PUBLIC_KEY=$(echo $CLIENT_PRIVATE_KEY | wg pubkey)
+          SERVER_PUBLIC_KEY=$(sudo cat /etc/wireguard/wg0.conf | grep PrivateKey | awk '{print $3}' | wg pubkey)
+          
+          echo "[Peer]
+          PublicKey = $SERVER_PUBLIC_KEY
+          AllowedIPs = 10.0.0.1/24
+          Endpoint = $(curl -s ifconfig.me):51820
+          " >> /etc/wireguard/wg0.conf
+          
+          # Запуск VPN-сервера
+          sudo wg-quick up wg0
+          
+          # Вывод конфигурации для клиента
+          echo "
+          [Interface]
+          PrivateKey = $CLIENT_PRIVATE_KEY
+          Address = 10.0.0.2/24
+          
+          [Peer]
+          PublicKey = $SERVER_PUBLIC_KEY
+          Endpoint = $(curl -s ifconfig.me):51820
+          AllowedIPs = 0.0.0.0/0
+          PersistentKeepalive = 25
+          " > client.conf
+        
+      - name: Show client configuration
+        run: cat client.conf
 
